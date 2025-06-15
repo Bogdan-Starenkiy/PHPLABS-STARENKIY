@@ -36,7 +36,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 </head>
 <body>
     <h2>Додати нового студента</h2>
-    <form method="POST" action="add_student.php">
+    <form method="POST" action="task1.php">
         <label>Ім’я студента:</label><br>
         <input type="text" name="name" required><br><br>
 
