@@ -1,18 +1,16 @@
 <?php
-// Підключення до MySQL
+// Підключення
 $mysqli = new mysqli("localhost", "root", "");
 if ($mysqli->connect_error) {
     die("Помилка з'єднання: " . $mysqli->connect_error);
 }
-
-// Створення бази даних
 $mysqli->query("CREATE DATABASE IF NOT EXISTS BookStore");
 $mysqli->select_db("BookStore");
 
-// Створення таблиць
+// Таблиці
 $mysqli->query("CREATE TABLE IF NOT EXISTS authors (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(255) NOT NULL
+    name VARCHAR(255) NOT NULL UNIQUE
 )");
 $mysqli->query("CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -35,35 +33,65 @@ $mysqli->query("CREATE TABLE IF NOT EXISTS orders (
     FOREIGN KEY (book_id) REFERENCES books(id)
 )");
 
-// Додавання мінімальних тестових записів, якщо таблиці порожні
-if ($mysqli->query("SELECT COUNT(*) AS c FROM authors")->fetch_assoc()['c'] == 0) {
-    $mysqli->query("INSERT INTO authors (name) VALUES ('Тарас Шевченко')");
-}
+// Початкові дані
 if ($mysqli->query("SELECT COUNT(*) AS c FROM users")->fetch_assoc()['c'] == 0) {
     $mysqli->query("INSERT INTO users (username, email) VALUES ('testuser', 'test@example.com')");
 }
-if ($mysqli->query("SELECT COUNT(*) AS c FROM books")->fetch_assoc()['c'] == 0) {
-    $mysqli->query("INSERT INTO books (title, author_id, price) VALUES ('Кобзар', 1, 120.50)");
-}
-if ($mysqli->query("SELECT COUNT(*) AS c FROM orders")->fetch_assoc()['c'] == 0) {
-    $mysqli->query("INSERT INTO orders (user_id, book_id, order_date) VALUES (1, 1, CURDATE())");
+
+// Функція для отримання або створення автора
+function get_or_create_author_id($mysqli, $name) {
+    $stmt = $mysqli->prepare("SELECT id FROM authors WHERE name = ?");
+    $stmt->bind_param("s", $name);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    if ($row = $result->fetch_assoc()) {
+        return $row['id'];
+    } else {
+        $stmt = $mysqli->prepare("INSERT INTO authors (name) VALUES (?)");
+        $stmt->bind_param("s", $name);
+        $stmt->execute();
+        return $mysqli->insert_id;
+    }
 }
 
-// Додавання нової книги
+// Додавання книги
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_book'])) {
+    $author_id = get_or_create_author_id($mysqli, trim($_POST['author_name']));
     $stmt = $mysqli->prepare("INSERT INTO books (title, author_id, price) VALUES (?, ?, ?)");
-    $stmt->bind_param("sid", $_POST['title'], $_POST['author_id'], $_POST['price']);
+    $stmt->bind_param("sid", $_POST['title'], $author_id, $_POST['price']);
     $stmt->execute();
     header("Location: task1.php");
     exit;
 }
 
-// Видалення книги
+// Оновлення книги
+if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_book'])) {
+    $author_id = get_or_create_author_id($mysqli, trim($_POST['author_name']));
+    $stmt = $mysqli->prepare("UPDATE books SET title=?, author_id=?, price=? WHERE id=?");
+    $stmt->bind_param("sidi", $_POST['title'], $author_id, $_POST['price'], $_POST['id']);
+    $stmt->execute();
+    header("Location: task1.php");
+    exit;
+}
+
+// Видалення
 if (isset($_GET['delete'])) {
     $id = intval($_GET['delete']);
     $mysqli->query("DELETE FROM books WHERE id = $id");
     header("Location: task1.php");
     exit;
+}
+
+// Отримання книги для редагування
+$editBook = null;
+$editAuthorName = "";
+if (isset($_GET['edit'])) {
+    $id = intval($_GET['edit']);
+    $editBook = $mysqli->query("SELECT * FROM books WHERE id = $id")->fetch_assoc();
+    if ($editBook) {
+        $res = $mysqli->query("SELECT name FROM authors WHERE id = {$editBook['author_id']}");
+        $editAuthorName = $res->fetch_assoc()['name'] ?? '';
+    }
 }
 ?>
 
@@ -87,26 +115,22 @@ if (isset($_GET['delete'])) {
                 <td>{$row['title']}</td>
                 <td>{$row['author']}</td>
                 <td>{$row['price']}</td>
-                <td><a href='?delete={$row['id']}'>Видалити</a></td>
+                <td>
+                    <a href='?edit={$row['id']}'>Редагувати</a> |
+                    <a href='?delete={$row['id']}'>Видалити</a>
+                </td>
             </tr>";
         }
         ?>
     </table>
 
-    <h2>Додати книгу</h2>
+    <h2><?= $editBook ? "Редагування книги" : "Додати книгу" ?></h2>
     <form method="POST">
-        Назва: <input type="text" name="title" required><br>
-        Автор:
-        <select name="author_id">
-            <?php
-            $authors = $mysqli->query("SELECT * FROM authors");
-            while ($author = $authors->fetch_assoc()) {
-                echo "<option value='{$author['id']}'>{$author['name']}</option>";
-            }
-            ?>
-        </select><br>
-        Ціна: <input type="number" step="0.01" name="price" required><br>
-        <input type="submit" name="add_book" value="Додати книгу">
+        <input type="hidden" name="id" value="<?= $editBook['id'] ?? '' ?>">
+        Назва: <input type="text" name="title" value="<?= $editBook['title'] ?? '' ?>" required><br>
+        Автор (введіть ім'я): <input type="text" name="author_name" value="<?= $editAuthorName ?>" required><br>
+        Ціна: <input type="number" step="0.01" name="price" value="<?= $editBook['price'] ?? '' ?>" required><br>
+        <input type="submit" name="<?= $editBook ? "update_book" : "add_book" ?>" value="<?= $editBook ? "Оновити" : "Додати" ?>">
     </form>
 
     <h2>Найпопулярніші книги</h2>
