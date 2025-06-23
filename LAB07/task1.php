@@ -1,13 +1,9 @@
 <?php
-// Підключення
 $mysqli = new mysqli("localhost", "root", "");
-if ($mysqli->connect_error) {
-    die("Помилка з'єднання: " . $mysqli->connect_error);
-}
+if ($mysqli->connect_error) die("Помилка з'єднання: " . $mysqli->connect_error);
 $mysqli->query("CREATE DATABASE IF NOT EXISTS BookStore");
 $mysqli->select_db("BookStore");
 
-// Таблиці
 $mysqli->query("CREATE TABLE IF NOT EXISTS authors (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL UNIQUE
@@ -33,28 +29,22 @@ $mysqli->query("CREATE TABLE IF NOT EXISTS orders (
     FOREIGN KEY (book_id) REFERENCES books(id)
 )");
 
-// Початкові дані
 if ($mysqli->query("SELECT COUNT(*) AS c FROM users")->fetch_assoc()['c'] == 0) {
     $mysqli->query("INSERT INTO users (username, email) VALUES ('testuser', 'test@example.com')");
 }
 
-// Функція для отримання або створення автора
 function get_or_create_author_id($mysqli, $name) {
     $stmt = $mysqli->prepare("SELECT id FROM authors WHERE name = ?");
     $stmt->bind_param("s", $name);
     $stmt->execute();
     $result = $stmt->get_result();
-    if ($row = $result->fetch_assoc()) {
-        return $row['id'];
-    } else {
-        $stmt = $mysqli->prepare("INSERT INTO authors (name) VALUES (?)");
-        $stmt->bind_param("s", $name);
-        $stmt->execute();
-        return $mysqli->insert_id;
-    }
+    if ($row = $result->fetch_assoc()) return $row['id'];
+    $stmt = $mysqli->prepare("INSERT INTO authors (name) VALUES (?)");
+    $stmt->bind_param("s", $name);
+    $stmt->execute();
+    return $mysqli->insert_id;
 }
 
-// Додавання книги
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_book'])) {
     $author_id = get_or_create_author_id($mysqli, trim($_POST['author_name']));
     $stmt = $mysqli->prepare("INSERT INTO books (title, author_id, price) VALUES (?, ?, ?)");
@@ -64,7 +54,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_book'])) {
     exit;
 }
 
-// Оновлення книги
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_book'])) {
     $author_id = get_or_create_author_id($mysqli, trim($_POST['author_name']));
     $stmt = $mysqli->prepare("UPDATE books SET title=?, author_id=?, price=? WHERE id=?");
@@ -74,7 +63,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_book'])) {
     exit;
 }
 
-// Видалення
 if (isset($_GET['delete'])) {
     $id = intval($_GET['delete']);
     $mysqli->query("DELETE FROM books WHERE id = $id");
@@ -82,7 +70,13 @@ if (isset($_GET['delete'])) {
     exit;
 }
 
-// Отримання книги для редагування
+if (isset($_GET['order'])) {
+    $book_id = intval($_GET['order']);
+    $mysqli->query("INSERT INTO orders (user_id, book_id, order_date) VALUES (1, $book_id, CURDATE())");
+    header("Location: task1.php");
+    exit;
+}
+
 $editBook = null;
 $editAuthorName = "";
 if (isset($_GET['edit'])) {
@@ -117,7 +111,8 @@ if (isset($_GET['edit'])) {
                 <td>{$row['price']}</td>
                 <td>
                     <a href='?edit={$row['id']}'>Редагувати</a> |
-                    <a href='?delete={$row['id']}'>Видалити</a>
+                    <a href='?delete={$row['id']}'>Видалити</a> |
+                    <a href='?order={$row['id']}'>Замовити</a>
                 </td>
             </tr>";
         }
